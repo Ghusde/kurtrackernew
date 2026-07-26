@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model LoanInfo {
+  id                  String   @id @default(cuid())
+  plafond             Float
+  disbursedAmount     Float
+  monthlyInstallment  Float
+  tenorMonths        Int
+  startDate          DateTime
+  createdAt          DateTime @default(now())
+
+  loanPayments       LoanPayment[]
+}
+
+model LoanPayment {
+  id                String   @id @default(cuid())
+  loanInfoId        String
+  monthNumber       Int
+  dueDate           DateTime
+  amountDue         Float
+  amountPaid        Float
+  status            String
+  shortfallAmount   Float
+  generatedAt       DateTime @default(now())
+
+  loanInfo          LoanInfo @relation(fields: [loanInfoId], references: [id])
+  accountTransactions AccountTransaction[]
+}
+
+model AccountBalance {
+  id              String   @id @default(cuid())
+  currentBalance  Float
+  updatedAt       DateTime @default(now())
+}
+
+model AccountTransaction {
+  id                    String   @id @default(cuid())
+  transactionDate       DateTime
+  type                  String
+  amount                Float
+  resultingBalance     Float
+  relatedLoanPaymentId  String?
+  note                  String?
+  isUndone             Boolean  @default(false)
+  createdAt            DateTime @default(now())
+
+  relatedLoanPayment   LoanPayment? @relation(fields: [relatedLoanPaymentId], references: [id])
+}
