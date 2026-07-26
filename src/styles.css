@@ -135,6 +135,8 @@ button, input {
 
 .nav-tab:hover { color: var(--paper); }
 
+a.nav-tab { text-decoration: none; display: inline-block; }
+
 .nav-tab.is-active {
   background: var(--glass-strong);
   color: var(--paper);
@@ -363,6 +365,8 @@ button, input {
 }
 
 .card-more:hover { color: var(--aurora-teal); }
+
+a.card-more { text-decoration: none; display: block; }
 
 .card-foot {
   display: flex;
@@ -616,8 +620,112 @@ button, input {
 
 /* Focus visibility for accessibility */
 button:focus-visible,
-input:focus-visible {
+a:focus-visible {
   outline: 2px solid var(--aurora-teal);
   outline-offset: 2px;
+}
+
+/* Inputs signal focus through their own border, so no extra outline ring */
+input:focus-visible { outline: none; }
+
+/* ─────────────────────────────────────────────────────────────
+   Detail pages
+───────────────────────────────────────────────────────────── */
+.detail-page {
+  max-width: 900px;
+  padding-top: 40px;
+}
+
+.detail-head {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.detail-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 600;
+  color: var(--paper);
+}
+
+.detail-subtitle {
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--mist);
+}
+
+.detail-panel {
+  background: var(--glass);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  padding: 8px 20px 20px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 14px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mist-dim);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 13px 12px;
+  color: var(--paper);
+  border-bottom: 1px solid var(--hairline-soft);
+  white-space: nowrap;
+}
+
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
+
+.data-table .is-numeric {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.amount-positive { color: var(--positive); }
+.amount-negative { color: var(--negative); }
+
+.status-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-transform: capitalize;
+}
+
+.status-pill.is-ok {
+  background: rgba(95, 227, 179, 0.12);
+  color: var(--positive);
+}
+
+.status-pill.is-warning {
+  background: rgba(234, 179, 8, 0.16);
+  color: #fbbf24;
+}
+
+.detail-empty {
+  text-align: center;
+  color: var(--mist);
+  font-size: 13px;
+  padding: 24px 0;
 }
 

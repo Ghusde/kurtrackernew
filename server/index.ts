@@ -143,13 +143,16 @@ app.get('/api/dashboard', async (_req, res) => {
     return res.json({ loanInfo: null, balance: null, payments: [], transactions: [] });
   }
 
-  const totalPaid = payments.reduce((sum, payment) => sum + payment.amountPaid, 0);
-  const remainingDebt = loanInfo.plafond - totalPaid;
+  const paidAggregate = await prisma.loanPayment.aggregate({
+    where: { loanInfoId: loanInfo.id },
+    _sum: { amountPaid: true },
+    _count: { _all: true }
+  });
+  const totalPaid = paidAggregate._sum.amountPaid ?? 0;
+  const remainingDebt = Math.max(0, loanInfo.plafond - totalPaid);
   const paidPercent = (totalPaid / loanInfo.plafond) * 100;
   const activeShortfall = await prisma.loanPayment.findFirst({ where: { shortfallAmount: { gt: 0 } } });
-  const currentMonth = new Date().getMonth() + 1;
-  const startMonth = new Date(loanInfo.startDate).getMonth() + 1;
-  const monthProgress = Math.max(1, currentMonth - startMonth + 1);
+  const monthProgress = paidAggregate._count._all;
 
   res.json({
     loanInfo,
@@ -248,45 +251,78 @@ app.post('/api/pay-installment', async (_req, res) => {
   await ensureSeedData();
   await runCatchUp();
 
+  const loanInfo = await prisma.loanInfo.findFirst();
   const balance = await prisma.accountBalance.findFirst();
-  if (!balance) {
+  if (!loanInfo || !balance) {
     return res.status(400).json({ error: 'Loan setup missing.' });
   }
 
-  const payment = await prisma.loanPayment.findFirst({
-    where: { shortfallAmount: { gt: 0 } },
+  const outstanding = await prisma.loanPayment.findFirst({
+    where: { loanInfoId: loanInfo.id, shortfallAmount: { gt: 0 } },
     orderBy: { dueDate: 'asc' }
   });
 
-  if (!payment) {
-    return res.json({ ok: true, message: 'Tidak ada cicilan tertunggak.' });
+  const paidNow = new Date();
+  const amount = outstanding
+    ? Math.min(outstanding.shortfallAmount, loanInfo.monthlyInstallment)
+    : loanInfo.monthlyInstallment;
+
+  if (balance.currentBalance < amount) {
+    return res.status(400).json({
+      error: `Saldo rekening kurang. Butuh ${formatCurrency(amount)}, saldo sekarang ${formatCurrency(balance.currentBalance)}.`
+    });
   }
 
-  if (balance.currentBalance <= 0) {
-    return res.status(400).json({ error: 'Saldo rekening kosong, top up dulu.' });
-  }
+  const currentBalance = balance.currentBalance - amount;
+  let paymentId: string;
+  let monthNumber: number;
 
-  const paid = Math.min(balance.currentBalance, payment.shortfallAmount);
-  const shortfallAmount = payment.shortfallAmount - paid;
-  const currentBalance = balance.currentBalance - paid;
+  if (outstanding) {
+    const shortfallAmount = outstanding.shortfallAmount - amount;
+    await prisma.loanPayment.update({
+      where: { id: outstanding.id },
+      data: {
+        amountPaid: outstanding.amountPaid + amount,
+        shortfallAmount,
+        status: shortfallAmount > 0 ? 'gagal_debit' : 'lunas'
+      }
+    });
+    paymentId = outstanding.id;
+    monthNumber = outstanding.monthNumber;
+  } else {
+    const lastPayment = await prisma.loanPayment.findFirst({
+      where: { loanInfoId: loanInfo.id },
+      orderBy: { monthNumber: 'desc' }
+    });
+    monthNumber = (lastPayment?.monthNumber ?? 0) + 1;
 
-  await prisma.loanPayment.update({
-    where: { id: payment.id },
-    data: {
-      amountPaid: payment.amountPaid + paid,
-      shortfallAmount,
-      status: shortfallAmount > 0 ? 'gagal_debit' : 'lunas'
+    if (monthNumber > loanInfo.tenorMonths) {
+      return res.status(400).json({ error: 'Semua cicilan sudah lunas.' });
     }
-  });
+
+    const created = await prisma.loanPayment.create({
+      data: {
+        loanInfoId: loanInfo.id,
+        monthNumber,
+        dueDate: paidNow,
+        amountDue: loanInfo.monthlyInstallment,
+        amountPaid: amount,
+        status: 'lunas',
+        shortfallAmount: 0,
+        generatedAt: paidNow
+      }
+    });
+    paymentId = created.id;
+  }
 
   await prisma.accountTransaction.create({
     data: {
-      transactionDate: new Date(),
+      transactionDate: paidNow,
       type: 'debit_cicilan',
-      amount: paid,
+      amount,
       resultingBalance: currentBalance,
-      relatedLoanPaymentId: payment.id,
-      note: `Cicilan bulan ${payment.monthNumber}`,
+      relatedLoanPaymentId: paymentId,
+      note: `Cicilan bulan ${monthNumber}`,
       isUndone: false
     }
   });
@@ -294,12 +330,7 @@ app.post('/api/pay-installment', async (_req, res) => {
   await prisma.accountBalance.updateMany({ data: { currentBalance, updatedAt: new Date() } });
   await backupData();
 
-  res.json({
-    ok: true,
-    message: shortfallAmount > 0
-      ? `Cicilan bulan ${payment.monthNumber} dibayar sebagian ${formatCurrency(paid)}, sisa kurang ${formatCurrency(shortfallAmount)}.`
-      : `Cicilan bulan ${payment.monthNumber} lunas (${formatCurrency(paid)}).`
-  });
+  res.json({ ok: true, message: `Cicilan bulan ${monthNumber} dibayar ${formatCurrency(amount)}.` });
 });
 
 app.post('/api/undo', async (_req, res) => {

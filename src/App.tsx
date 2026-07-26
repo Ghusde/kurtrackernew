@@ -14,7 +14,7 @@ type DashboardData = {
   tenorMonths: number;
   activeShortfall: boolean;
   payments: Array<{ id: string; monthNumber: number; amountPaid: number; status: string; shortfallAmount: number; dueDate: string }>;
-  transactions: Array<{ id: string; type: string; amount: number; note: string | null; transactionDate: string }>;
+  transactions: Array<{ id: string; type: string; amount: number; resultingBalance: number; note: string | null; transactionDate: string }>;
 };
 
 function formatCurrency(value: number) {
@@ -39,7 +39,170 @@ function getMonthYear(dateStr: string) {
   return new Intl.DateTimeFormat('id-ID', { year: 'numeric', month: 'long' }).format(date);
 }
 
+type LoanPayment = {
+  id: string;
+  monthNumber: number;
+  dueDate: string;
+  amountDue: number;
+  amountPaid: number;
+  shortfallAmount: number;
+  status: string;
+};
+
+type AccountTransaction = {
+  id: string;
+  transactionDate: string;
+  type: string;
+  amount: number;
+  resultingBalance: number;
+  note: string | null;
+};
+
+const isIncoming = (type: string) => type === 'topup' || type === 'shortfall_recovery';
+
+function getRoute() {
+  return window.location.hash.replace(/^#/, '') || '/';
+}
+
+function useRoute() {
+  const [route, setRoute] = useState(getRoute);
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(getRoute());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  return route;
+}
+
 export default function App() {
+  const route = useRoute();
+
+  if (route === '/riwayat-cicilan') return <LoanPaymentsPage />;
+  if (route === '/transaksi') return <TransactionsPage />;
+  return <Dashboard />;
+}
+
+function DetailLayout({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+  return (
+    <>
+      <div className="background-surface" aria-hidden="true"></div>
+
+      <header className="navbar">
+        <div className="navbar-inner">
+          <div className="brand">
+            <span className="brand-mark">◈</span>
+            <span className="brand-name">KUR<span className="brand-name-light">Tracker</span></span>
+          </div>
+          <nav className="nav-tabs">
+            <a className="nav-tab" href="#/">Home</a>
+          </nav>
+        </div>
+      </header>
+
+      <main className="page detail-page">
+        <section className="detail-head">
+          <h1 className="detail-title">{title}</h1>
+          <p className="detail-subtitle">{subtitle}</p>
+        </section>
+        <section className="detail-panel">{children}</section>
+      </main>
+    </>
+  );
+}
+
+function LoanPaymentsPage() {
+  const [payments, setPayments] = useState<LoanPayment[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch('/api/loan-payments');
+      setPayments(await res.json());
+    })();
+  }, []);
+
+  const totalPaid = payments.reduce((sum, payment) => sum + payment.amountPaid, 0);
+
+  return (
+    <DetailLayout
+      title="Semua Riwayat Cicilan"
+      subtitle={`${payments.length} cicilan · total dibayar ${formatCurrency(totalPaid)}`}
+    >
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Bulan</th>
+            <th>Tanggal</th>
+            <th className="is-numeric">Tagihan</th>
+            <th className="is-numeric">Dibayar</th>
+            <th className="is-numeric">Kekurangan</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {payments.map((payment) => (
+            <tr key={payment.id}>
+              <td>Bulan ke-{payment.monthNumber}</td>
+              <td>{formatDate(payment.dueDate)}</td>
+              <td className="is-numeric">{formatCurrency(payment.amountDue)}</td>
+              <td className="is-numeric amount-positive">{formatCurrency(payment.amountPaid)}</td>
+              <td className="is-numeric">{payment.shortfallAmount > 0 ? formatCurrency(payment.shortfallAmount) : '—'}</td>
+              <td><span className={`status-pill ${payment.shortfallAmount > 0 ? 'is-warning' : 'is-ok'}`}>{payment.status.replace(/_/g, ' ')}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {payments.length === 0 && <p className="detail-empty">Belum ada data cicilan.</p>}
+    </DetailLayout>
+  );
+}
+
+function TransactionsPage() {
+  const [transactions, setTransactions] = useState<AccountTransaction[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch('/api/transactions');
+      setTransactions(await res.json());
+    })();
+  }, []);
+
+  return (
+    <DetailLayout
+      title="Semua Transaksi Rekening"
+      subtitle={`${transactions.length} transaksi`}
+    >
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Tanggal</th>
+            <th>Jenis</th>
+            <th className="is-numeric">Jumlah</th>
+            <th className="is-numeric">Saldo Setelah</th>
+            <th>Catatan</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map((tx) => (
+            <tr key={tx.id}>
+              <td>{formatDate(tx.transactionDate)}</td>
+              <td style={{ textTransform: 'capitalize' }}>{tx.type.replace(/_/g, ' ')}</td>
+              <td className={`is-numeric ${isIncoming(tx.type) ? 'amount-positive' : 'amount-negative'}`}>
+                {isIncoming(tx.type) ? '+ ' : '− '}{formatCurrency(tx.amount)}
+              </td>
+              <td className="is-numeric">{formatCurrency(tx.resultingBalance)}</td>
+              <td>{tx.note || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {transactions.length === 0 && <p className="detail-empty">Belum ada transaksi.</p>}
+    </DetailLayout>
+  );
+}
+
+function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -174,7 +337,7 @@ export default function App() {
           <article className="card">
             <div className="card-head">
               <h2>Riwayat Cicilan</h2>
-              <span className="card-tag">{data?.payments.length ?? 0} pembayaran</span>
+              <span className="card-tag">{data?.monthProgress ?? 0} pembayaran</span>
             </div>
             <ul className="ledger">
               {data?.payments.slice(0, 3).map((payment) => (
@@ -192,7 +355,7 @@ export default function App() {
               ))}
             </ul>
             <div className="card-foot">
-              <button className="card-more">Lihat semua riwayat →</button>
+              <a className="card-more" href="#/riwayat-cicilan" target="_blank" rel="noreferrer">Lihat semua riwayat →</a>
               <button type="button" className="card-action" onClick={payInstallment} disabled={busy}>Bayar</button>
             </div>
           </article>
@@ -212,7 +375,7 @@ export default function App() {
                   </div>
                   <div className="ledger-info">
                     <span className="ledger-label" style={{ textTransform: 'capitalize' }}>{tx.type.replace(/_/g, ' ')}</span>
-                    <span className="ledger-sub">{tx.note ? `Saldo jadi ${formatCurrency(tx.amount)}` : (tx.type === 'topup' ? `Saldo jadi ${formatCurrency(tx.amount)}` : '—')}</span>
+                    <span className="ledger-sub">Saldo jadi {formatCurrency(tx.resultingBalance)}</span>
                   </div>
                   <span className={`ledger-amount ${tx.type === 'topup' || tx.type === 'shortfall_recovery' ? 'ledger-amount-plus' : 'ledger-amount-minus'}`}>
                     {tx.type === 'topup' || tx.type === 'shortfall_recovery' ? '+ ' : '− '}{formatCurrency(tx.amount)}
@@ -221,7 +384,7 @@ export default function App() {
               ))}
             </ul>
             <div className="card-foot">
-              <button className="card-more">Lihat semua transaksi →</button>
+              <a className="card-more" href="#/transaksi" target="_blank" rel="noreferrer">Lihat semua transaksi →</a>
               <button type="button" className="card-action card-action-ghost" onClick={undoLast} disabled={busy}>Undo</button>
             </div>
           </article>
