@@ -21,6 +21,14 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
 }
 
+function formatThousands(rawDigits: string) {
+  return rawDigits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function toDigits(value: string) {
+  return value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+}
+
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
   return new Intl.DateTimeFormat('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
@@ -34,6 +42,7 @@ function getMonthYear(dateStr: string) {
 export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [amount, setAmount] = useState('');
+  const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const [message, setMessage] = useState('');
   const [formMode, setFormMode] = useState<'topup' | 'edit'>('topup');
@@ -86,11 +95,31 @@ export default function App() {
   };
 
   const undoLast = async () => {
-    const res = await fetch('/api/undo', { method: 'POST' });
-    const json = await res.json();
-    setMessage(json.ok ? 'Undo terakhir berhasil.' : json.error || 'Gagal');
-    await loadData();
-    setTimeout(() => setMessage(''), 3000);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/undo', { method: 'POST' });
+      const json = await res.json();
+      setMessage(json.ok ? 'Undo terakhir berhasil.' : json.error || 'Gagal');
+      await loadData();
+      setTimeout(() => setMessage(''), 3000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const payInstallment = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/pay-installment', { method: 'POST' });
+      const json = await res.json();
+      setMessage(json.ok ? json.message || 'Pembayaran cicilan berhasil.' : json.error || 'Gagal membayar cicilan.');
+      await loadData();
+      setTimeout(() => setMessage(''), 3000);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -115,7 +144,8 @@ export default function App() {
           <p className="hero-eyebrow">Sisa Pinjaman KUR</p>
           <div className="hero-glow" aria-hidden="true"></div>
           <h1 className="hero-figure">
-            Rp <span className="hero-number">{data ? (data.remainingDebt / 1000000).toFixed(1) : '0'}</span>.000.000
+            <span className="hero-currency">Rp</span>
+            <span className="hero-number">{formatThousands(String(Math.round(data?.remainingDebt ?? 0)))}</span>
           </h1>
 
           <div className="hero-progress">
@@ -161,7 +191,10 @@ export default function App() {
                 </li>
               ))}
             </ul>
-            <button className="card-more">Lihat semua riwayat →</button>
+            <div className="card-foot">
+              <button className="card-more">Lihat semua riwayat →</button>
+              <button type="button" className="card-action" onClick={payInstallment} disabled={busy}>Bayar</button>
+            </div>
           </article>
 
           {/* Saldo Rekening */}
@@ -187,7 +220,10 @@ export default function App() {
                 </li>
               ))}
             </ul>
-            <button className="card-more">Lihat semua transaksi →</button>
+            <div className="card-foot">
+              <button className="card-more">Lihat semua transaksi →</button>
+              <button type="button" className="card-action card-action-ghost" onClick={undoLast} disabled={busy}>Undo</button>
+            </div>
           </article>
         </section>
 
@@ -233,12 +269,13 @@ export default function App() {
                     <div className="input-prefix">
                       <span>Rp</span>
                       <input
-                        type="number"
+                        type="text"
                         id="jumlah"
                         placeholder="0"
                         inputMode="numeric"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
+                        autoComplete="off"
+                        value={formatThousands(amount)}
+                        onChange={(e) => setAmount(toDigits(e.target.value))}
                       />
                     </div>
                   </div>
@@ -267,12 +304,13 @@ export default function App() {
                   <div className="input-prefix">
                     <span>Rp</span>
                     <input
-                      type="number"
+                      type="text"
                       id="saldo-baru"
                       placeholder="0"
                       inputMode="numeric"
-                      value={newBalance}
-                      onChange={(e) => setNewBalance(e.target.value)}
+                      autoComplete="off"
+                      value={formatThousands(newBalance)}
+                      onChange={(e) => setNewBalance(toDigits(e.target.value))}
                     />
                   </div>
                 </div>
@@ -284,15 +322,6 @@ export default function App() {
               </>
             )}
           </form>
-
-          <button
-            type="button"
-            onClick={undoLast}
-            className="card-more"
-            style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--hairline-soft)' }}
-          >
-            Undo terakhir
-          </button>
 
           {message && (
             <div style={{

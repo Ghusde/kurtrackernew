@@ -244,6 +244,64 @@ app.post('/api/topup', async (req, res) => {
   res.json({ ok: true, transactions: createdTransactions });
 });
 
+app.post('/api/pay-installment', async (_req, res) => {
+  await ensureSeedData();
+  await runCatchUp();
+
+  const balance = await prisma.accountBalance.findFirst();
+  if (!balance) {
+    return res.status(400).json({ error: 'Loan setup missing.' });
+  }
+
+  const payment = await prisma.loanPayment.findFirst({
+    where: { shortfallAmount: { gt: 0 } },
+    orderBy: { dueDate: 'asc' }
+  });
+
+  if (!payment) {
+    return res.json({ ok: true, message: 'Tidak ada cicilan tertunggak.' });
+  }
+
+  if (balance.currentBalance <= 0) {
+    return res.status(400).json({ error: 'Saldo rekening kosong, top up dulu.' });
+  }
+
+  const paid = Math.min(balance.currentBalance, payment.shortfallAmount);
+  const shortfallAmount = payment.shortfallAmount - paid;
+  const currentBalance = balance.currentBalance - paid;
+
+  await prisma.loanPayment.update({
+    where: { id: payment.id },
+    data: {
+      amountPaid: payment.amountPaid + paid,
+      shortfallAmount,
+      status: shortfallAmount > 0 ? 'gagal_debit' : 'lunas'
+    }
+  });
+
+  await prisma.accountTransaction.create({
+    data: {
+      transactionDate: new Date(),
+      type: 'debit_cicilan',
+      amount: paid,
+      resultingBalance: currentBalance,
+      relatedLoanPaymentId: payment.id,
+      note: `Cicilan bulan ${payment.monthNumber}`,
+      isUndone: false
+    }
+  });
+
+  await prisma.accountBalance.updateMany({ data: { currentBalance, updatedAt: new Date() } });
+  await backupData();
+
+  res.json({
+    ok: true,
+    message: shortfallAmount > 0
+      ? `Cicilan bulan ${payment.monthNumber} dibayar sebagian ${formatCurrency(paid)}, sisa kurang ${formatCurrency(shortfallAmount)}.`
+      : `Cicilan bulan ${payment.monthNumber} lunas (${formatCurrency(paid)}).`
+  });
+});
+
 app.post('/api/undo', async (_req, res) => {
   await ensureSeedData();
   const lastTransaction = await prisma.accountTransaction.findFirst({ where: { isUndone: false }, orderBy: { createdAt: 'desc' } });
