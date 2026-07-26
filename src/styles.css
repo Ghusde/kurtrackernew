@@ -678,6 +678,18 @@ input:focus-visible { outline: none; }
   padding-top: 40px;
 }
 
+.detail-page.is-wide {
+  max-width: min(1440px, 96vw);
+}
+
+.detail-page.is-wide .data-table {
+  table-layout: auto;
+}
+
+.detail-page.is-wide .detail-panel {
+  overflow-x: visible;
+}
+
 .detail-head {
   text-align: center;
   margin-bottom: 24px;

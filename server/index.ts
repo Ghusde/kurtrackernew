@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { prisma } from './prisma.js';
-import { runCatchUp } from './catchUp.js';
 import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -62,21 +61,13 @@ async function ensureSeedData() {
       amount: created.disbursedAmount,
       resultingBalance: created.disbursedAmount,
       relatedLoanPaymentId: null,
-      note: 'Initial KUR disbursement',
-      isDeleted: false
+      note: 'Initial KUR disbursement'
     }
   });
 
   await backupData();
   return created;
 }
-
-app.use(async (_req, _res, next) => {
-  if (_req.path.startsWith('/api/dashboard') || _req.path.startsWith('/api/transactions') || _req.path.startsWith('/api/loan-payments') || _req.path.startsWith('/api/ai')) {
-    await runCatchUp();
-  }
-  next();
-});
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
@@ -108,8 +99,7 @@ app.post('/api/setup', async (req, res) => {
       amount: created.disbursedAmount,
       resultingBalance: created.disbursedAmount,
       relatedLoanPaymentId: null,
-      note: 'Initial KUR disbursement',
-      isDeleted: false
+      note: 'Initial KUR disbursement'
     }
   });
 
@@ -135,8 +125,8 @@ app.post('/api/set-balance', async (req, res) => {
 app.get('/api/dashboard', async (_req, res) => {
   await ensureSeedData();
   const loanInfo = await prisma.loanInfo.findFirst();
-  const payments = await prisma.loanPayment.findMany({ where: { isDeleted: false }, orderBy: { dueDate: 'desc' }, take: 5 });
-  const transactions = await prisma.accountTransaction.findMany({ where: { isDeleted: false }, orderBy: { transactionDate: 'desc' }, take: 5 });
+  const payments = await prisma.loanPayment.findMany({ orderBy: { dueDate: 'desc' }, take: 5 });
+  const transactions = await prisma.accountTransaction.findMany({ orderBy: { transactionDate: 'desc' }, take: 5 });
   const balance = await prisma.accountBalance.findFirst();
 
   if (!loanInfo || !balance) {
@@ -144,14 +134,13 @@ app.get('/api/dashboard', async (_req, res) => {
   }
 
   const paidAggregate = await prisma.loanPayment.aggregate({
-    where: { loanInfoId: loanInfo.id, isDeleted: false },
+    where: { loanInfoId: loanInfo.id },
     _sum: { amountPaid: true },
     _count: { _all: true }
   });
   const totalPaid = paidAggregate._sum.amountPaid ?? 0;
   const remainingDebt = Math.max(0, loanInfo.plafond - totalPaid + loanInfo.debtAdjustment);
   const paidPercent = ((loanInfo.plafond - remainingDebt) / loanInfo.plafond) * 100;
-  const activeShortfall = await prisma.loanPayment.findFirst({ where: { shortfallAmount: { gt: 0 }, isDeleted: false } });
   const monthProgress = paidAggregate._count._all;
 
   res.json({
@@ -161,30 +150,21 @@ app.get('/api/dashboard', async (_req, res) => {
     paidPercent,
     monthProgress,
     tenorMonths: loanInfo.tenorMonths,
-    activeShortfall: Boolean(activeShortfall),
     payments,
     transactions,
     currency: formatCurrency
   });
 });
 
-app.get('/api/transactions', async (req, res) => {
+app.get('/api/transactions', async (_req, res) => {
   await ensureSeedData();
-  const includeDeleted = req.query.includeDeleted === 'true';
-  const transactions = await prisma.accountTransaction.findMany({
-    where: includeDeleted ? {} : { isDeleted: false },
-    orderBy: { transactionDate: 'desc' }
-  });
+  const transactions = await prisma.accountTransaction.findMany({ orderBy: { transactionDate: 'desc' } });
   res.json(transactions);
 });
 
-app.get('/api/loan-payments', async (req, res) => {
+app.get('/api/loan-payments', async (_req, res) => {
   await ensureSeedData();
-  const includeDeleted = req.query.includeDeleted === 'true';
-  const payments = await prisma.loanPayment.findMany({
-    where: includeDeleted ? {} : { isDeleted: false },
-    orderBy: { dueDate: 'asc' }
-  });
+  const payments = await prisma.loanPayment.findMany({ orderBy: { dueDate: 'asc' } });
   res.json(payments);
 });
 
@@ -197,67 +177,30 @@ app.post('/api/topup', async (req, res) => {
     return res.status(400).json({ error: 'Loan setup missing.' });
   }
 
-  const pendingShortfalls = await prisma.loanPayment.findMany({
-    where: { shortfallAmount: { gt: 0 }, isDeleted: false },
-    orderBy: { dueDate: 'asc' }
+  const topUpAmount = Number(amount);
+  if (!Number.isFinite(topUpAmount) || topUpAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid top up amount.' });
+  }
+
+  const currentBalance = balance.currentBalance + topUpAmount;
+  const transaction = await prisma.accountTransaction.create({
+    data: {
+      transactionDate: new Date(),
+      type: 'topup',
+      amount: topUpAmount,
+      resultingBalance: currentBalance,
+      relatedLoanPaymentId: null,
+      note
+    }
   });
-
-  let remaining = Number(amount);
-  let currentBalance = balance.currentBalance;
-  const createdTransactions = [] as any[];
-
-  for (const payment of pendingShortfalls) {
-    if (remaining <= 0) break;
-    const applied = Math.min(remaining, payment.shortfallAmount);
-    if (applied <= 0) continue;
-
-    const newShortfall = payment.shortfallAmount - applied;
-    const status = newShortfall > 0 ? 'awaiting_settlement' : 'paid';
-    await prisma.loanPayment.update({
-      where: { id: payment.id },
-      data: { shortfallAmount: newShortfall, status }
-    });
-
-    currentBalance += 0;
-    const tx = await prisma.accountTransaction.create({
-      data: {
-        transactionDate: new Date(),
-        type: 'shortfall_recovery',
-        amount: applied,
-        resultingBalance: currentBalance,
-        relatedLoanPaymentId: payment.id,
-        note: 'Shortfall recovery',
-        isDeleted: false
-      }
-    });
-    createdTransactions.push(tx);
-    remaining -= applied;
-  }
-
-  if (remaining > 0) {
-    currentBalance += remaining;
-    const tx = await prisma.accountTransaction.create({
-      data: {
-        transactionDate: new Date(),
-        type: 'topup',
-        amount: remaining,
-        resultingBalance: currentBalance,
-        relatedLoanPaymentId: null,
-        note,
-        isDeleted: false
-      }
-    });
-    createdTransactions.push(tx);
-  }
 
   await prisma.accountBalance.updateMany({ data: { currentBalance, updatedAt: new Date() } });
   await backupData();
-  res.json({ ok: true, transactions: createdTransactions });
+  res.json({ ok: true, transactions: [transaction] });
 });
 
 app.post('/api/pay-installment', async (_req, res) => {
   await ensureSeedData();
-  await runCatchUp();
 
   const loanInfo = await prisma.loanInfo.findFirst();
   const balance = await prisma.accountBalance.findFirst();
@@ -265,15 +208,8 @@ app.post('/api/pay-installment', async (_req, res) => {
     return res.status(400).json({ error: 'Loan setup missing.' });
   }
 
-  const outstanding = await prisma.loanPayment.findFirst({
-    where: { loanInfoId: loanInfo.id, shortfallAmount: { gt: 0 }, isDeleted: false },
-    orderBy: { dueDate: 'asc' }
-  });
-
   const paidNow = new Date();
-  const amount = outstanding
-    ? Math.min(outstanding.shortfallAmount, loanInfo.monthlyInstallment)
-    : loanInfo.monthlyInstallment;
+  const amount = loanInfo.monthlyInstallment;
 
   if (balance.currentBalance < amount) {
     return res.status(400).json({
@@ -282,46 +218,29 @@ app.post('/api/pay-installment', async (_req, res) => {
   }
 
   const currentBalance = balance.currentBalance - amount;
-  let paymentId: string;
-  let monthNumber: number;
 
-  if (outstanding) {
-    const shortfallAmount = outstanding.shortfallAmount - amount;
-    await prisma.loanPayment.update({
-      where: { id: outstanding.id },
-      data: {
-        amountPaid: outstanding.amountPaid + amount,
-        shortfallAmount,
-        status: shortfallAmount > 0 ? 'debit_failed' : 'paid'
-      }
-    });
-    paymentId = outstanding.id;
-    monthNumber = outstanding.monthNumber;
-  } else {
-    const lastPayment = await prisma.loanPayment.findFirst({
-      where: { loanInfoId: loanInfo.id, isDeleted: false },
-      orderBy: { monthNumber: 'desc' }
-    });
-    monthNumber = (lastPayment?.monthNumber ?? 0) + 1;
+  const lastPayment = await prisma.loanPayment.findFirst({
+    where: { loanInfoId: loanInfo.id },
+    orderBy: { monthNumber: 'desc' }
+  });
+  const monthNumber = (lastPayment?.monthNumber ?? 0) + 1;
 
-    if (monthNumber > loanInfo.tenorMonths) {
-      return res.status(400).json({ error: 'All installments have been paid.' });
-    }
-
-    const created = await prisma.loanPayment.create({
-      data: {
-        loanInfoId: loanInfo.id,
-        monthNumber,
-        dueDate: paidNow,
-        amountDue: loanInfo.monthlyInstallment,
-        amountPaid: amount,
-        status: 'paid',
-        shortfallAmount: 0,
-        generatedAt: paidNow
-      }
-    });
-    paymentId = created.id;
+  if (monthNumber > loanInfo.tenorMonths) {
+    return res.status(400).json({ error: 'All installments have been paid.' });
   }
+
+  const created = await prisma.loanPayment.create({
+    data: {
+      loanInfoId: loanInfo.id,
+      monthNumber,
+      dueDate: paidNow,
+      amountDue: amount,
+      amountPaid: amount,
+      status: 'paid',
+      shortfallAmount: 0,
+      generatedAt: paidNow
+    }
+  });
 
   await prisma.accountTransaction.create({
     data: {
@@ -329,9 +248,8 @@ app.post('/api/pay-installment', async (_req, res) => {
       type: 'installment_debit',
       amount,
       resultingBalance: currentBalance,
-      relatedLoanPaymentId: paymentId,
-      note: `Installment month ${monthNumber}`,
-      isDeleted: false
+      relatedLoanPaymentId: created.id,
+      note: `Installment month ${monthNumber}`
     }
   });
 
@@ -356,7 +274,7 @@ app.post('/api/set-remaining-debt', async (req, res) => {
   }
 
   const paidAggregate = await prisma.loanPayment.aggregate({
-    where: { loanInfoId: loanInfo.id, isDeleted: false },
+    where: { loanInfoId: loanInfo.id },
     _sum: { amountPaid: true }
   });
   const totalPaid = paidAggregate._sum.amountPaid ?? 0;
@@ -370,65 +288,26 @@ app.post('/api/set-remaining-debt', async (req, res) => {
   res.json({ ok: true, message: `Remaining debt updated to ${formatCurrency(remainingDebt)}.` });
 });
 
-async function applyTransactionEffect(transaction: { type: string; amount: number; relatedLoanPaymentId: string | null }, direction: 'apply' | 'revert') {
+async function adjustBalance(delta: number) {
   const balance = await prisma.accountBalance.findFirst();
   if (!balance) throw new Error('Account balance missing.');
-
-  const incoming = transaction.type === 'topup' || transaction.type === 'shortfall_recovery';
-
-  const signedAmount = (incoming ? transaction.amount : -transaction.amount) * (direction === 'apply' ? 1 : -1);
-  const currentBalance = balance.currentBalance + signedAmount;
-  if (currentBalance < 0) return null;
-
-  if ((transaction.type === 'installment_debit' || transaction.type === 'debit_cicilan') && transaction.relatedLoanPaymentId) {
-    const payment = await prisma.loanPayment.findUnique({ where: { id: transaction.relatedLoanPaymentId } });
-    if (payment) {
-      const amountPaid = direction === 'apply' ? payment.amountPaid + transaction.amount : payment.amountPaid - transaction.amount;
-      const shortfallAmount = Math.max(0, payment.amountDue - amountPaid);
-      await prisma.loanPayment.update({
-        where: { id: payment.id },
-        data: { amountPaid, shortfallAmount, status: shortfallAmount > 0 ? 'debit_failed' : 'paid' }
-      });
-    }
-  }
-
+  const currentBalance = balance.currentBalance + delta;
   await prisma.accountBalance.updateMany({ data: { currentBalance, updatedAt: new Date() } });
   return currentBalance;
 }
+
+const transactionDelta = (type: string, amount: number) =>
+  type === 'topup' ? amount : -amount;
 
 app.delete('/api/transactions/:id', async (req, res) => {
   await ensureSeedData();
   const transaction = await prisma.accountTransaction.findUnique({ where: { id: req.params.id } });
   if (!transaction) return res.status(404).json({ error: 'Transaction not found.' });
-  if (transaction.isDeleted) return res.status(400).json({ error: 'Transaction is already deleted.' });
 
-  const currentBalance = await applyTransactionEffect(transaction, 'revert');
-  if (currentBalance === null) {
-    return res.status(400).json({ error: 'Balance is not sufficient to delete this transaction.' });
-  }
-
-  await prisma.accountTransaction.update({ where: { id: transaction.id }, data: { isDeleted: true } });
+  await adjustBalance(-transactionDelta(transaction.type, transaction.amount));
+  await prisma.accountTransaction.delete({ where: { id: transaction.id } });
   await backupData();
   res.json({ ok: true, message: 'Transaction deleted.' });
-});
-
-app.post('/api/transactions/:id/restore', async (req, res) => {
-  await ensureSeedData();
-  const transaction = await prisma.accountTransaction.findUnique({ where: { id: req.params.id } });
-  if (!transaction) return res.status(404).json({ error: 'Transaction not found.' });
-  if (!transaction.isDeleted) return res.status(400).json({ error: 'Transaction is not deleted.' });
-
-  const currentBalance = await applyTransactionEffect(transaction, 'apply');
-  if (currentBalance === null) {
-    return res.status(400).json({ error: 'Balance is not sufficient to restore this transaction.' });
-  }
-
-  await prisma.accountTransaction.update({
-    where: { id: transaction.id },
-    data: { isDeleted: false, resultingBalance: currentBalance }
-  });
-  await backupData();
-  res.json({ ok: true, message: 'Transaction restored.' });
 });
 
 app.patch('/api/transactions/:id', async (req, res) => {
@@ -441,20 +320,11 @@ app.patch('/api/transactions/:id', async (req, res) => {
     return res.status(400).json({ error: 'Invalid transaction amount.' });
   }
 
-  if (amount !== undefined && amount !== transaction.amount && !transaction.isDeleted) {
-    const reverted = await applyTransactionEffect(transaction, 'revert');
-    if (reverted === null) {
-      return res.status(400).json({ error: 'Balance is not sufficient to edit this transaction.' });
-    }
-    const applied = await applyTransactionEffect(
-      { type: transaction.type, amount, relatedLoanPaymentId: transaction.relatedLoanPaymentId },
-      'apply'
+  let resultingBalance = transaction.resultingBalance;
+  if (amount !== undefined && amount !== transaction.amount) {
+    resultingBalance = await adjustBalance(
+      transactionDelta(transaction.type, amount) - transactionDelta(transaction.type, transaction.amount)
     );
-    if (applied === null) {
-      await applyTransactionEffect(transaction, 'apply');
-      return res.status(400).json({ error: 'Balance is not sufficient to edit this transaction.' });
-    }
-    await prisma.accountTransaction.update({ where: { id: transaction.id }, data: { resultingBalance: applied } });
   }
 
   const updated = await prisma.accountTransaction.update({
@@ -462,7 +332,8 @@ app.patch('/api/transactions/:id', async (req, res) => {
     data: {
       amount: amount ?? transaction.amount,
       note: note === undefined ? transaction.note : note,
-      transactionDate: transactionDate ? new Date(transactionDate) : transaction.transactionDate
+      transactionDate: transactionDate ? new Date(transactionDate) : transaction.transactionDate,
+      resultingBalance
     }
   });
 
@@ -474,22 +345,18 @@ app.delete('/api/loan-payments/:id', async (req, res) => {
   await ensureSeedData();
   const payment = await prisma.loanPayment.findUnique({ where: { id: req.params.id } });
   if (!payment) return res.status(404).json({ error: 'Installment not found.' });
-  if (payment.isDeleted) return res.status(400).json({ error: 'Installment is already deleted.' });
 
-  await prisma.loanPayment.update({ where: { id: payment.id }, data: { isDeleted: true } });
+  const relatedTransactions = await prisma.accountTransaction.findMany({
+    where: { relatedLoanPaymentId: payment.id }
+  });
+  for (const transaction of relatedTransactions) {
+    await adjustBalance(-transactionDelta(transaction.type, transaction.amount));
+  }
+
+  await prisma.accountTransaction.deleteMany({ where: { relatedLoanPaymentId: payment.id } });
+  await prisma.loanPayment.delete({ where: { id: payment.id } });
   await backupData();
   res.json({ ok: true, message: 'Installment deleted.' });
-});
-
-app.post('/api/loan-payments/:id/restore', async (req, res) => {
-  await ensureSeedData();
-  const payment = await prisma.loanPayment.findUnique({ where: { id: req.params.id } });
-  if (!payment) return res.status(404).json({ error: 'Installment not found.' });
-  if (!payment.isDeleted) return res.status(400).json({ error: 'Installment is not deleted.' });
-
-  await prisma.loanPayment.update({ where: { id: payment.id }, data: { isDeleted: false } });
-  await backupData();
-  res.json({ ok: true, message: 'Installment restored.' });
 });
 
 app.patch('/api/loan-payments/:id', async (req, res) => {
@@ -497,24 +364,24 @@ app.patch('/api/loan-payments/:id', async (req, res) => {
   const payment = await prisma.loanPayment.findUnique({ where: { id: req.params.id } });
   if (!payment) return res.status(404).json({ error: 'Installment not found.' });
 
-  const { amountDue, amountPaid, dueDate } = req.body;
+  const { amountDue, amountPaid, dueDate, monthNumber } = req.body;
   for (const value of [amountDue, amountPaid]) {
     if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
       return res.status(400).json({ error: 'Invalid installment amount.' });
     }
   }
-
-  const nextAmountDue = amountDue ?? payment.amountDue;
-  const nextAmountPaid = amountPaid ?? payment.amountPaid;
-  const shortfallAmount = Math.max(0, nextAmountDue - nextAmountPaid);
+  if (monthNumber !== undefined && (!Number.isInteger(monthNumber) || monthNumber < 1)) {
+    return res.status(400).json({ error: 'Invalid month number.' });
+  }
 
   const updated = await prisma.loanPayment.update({
     where: { id: payment.id },
     data: {
-      amountDue: nextAmountDue,
-      amountPaid: nextAmountPaid,
-      shortfallAmount,
-      status: shortfallAmount > 0 ? 'debit_failed' : 'paid',
+      monthNumber: monthNumber ?? payment.monthNumber,
+      amountDue: amountDue ?? payment.amountDue,
+      amountPaid: amountPaid ?? payment.amountPaid,
+      shortfallAmount: 0,
+      status: 'paid',
       dueDate: dueDate ? new Date(dueDate) : payment.dueDate
     }
   });
@@ -523,20 +390,20 @@ app.patch('/api/loan-payments/:id', async (req, res) => {
   res.json({ ok: true, message: 'Installment updated.', payment: updated });
 });
 
+
 app.post('/api/ai/tools', async (req, res) => {
   await ensureSeedData();
   const { query, tool, params } = req.body;
   const loanInfo = await prisma.loanInfo.findFirst();
   const balance = await prisma.accountBalance.findFirst();
-  const payments = await prisma.loanPayment.findMany({ where: { isDeleted: false }, orderBy: { dueDate: 'asc' } });
-  const transactions = await prisma.accountTransaction.findMany({ where: { isDeleted: false }, orderBy: { transactionDate: 'desc' } });
+  const payments = await prisma.loanPayment.findMany({ orderBy: { dueDate: 'asc' } });
+  const transactions = await prisma.accountTransaction.findMany({ orderBy: { transactionDate: 'desc' } });
   if (!loanInfo || !balance) {
     return res.json({ answer: 'Setup data is incomplete.' });
   }
 
   const totalPaid = payments.reduce((sum, payment) => sum + payment.amountPaid, 0);
   const remainingDebt = loanInfo.plafond - totalPaid;
-  const activeShortfall = payments.some((payment) => payment.shortfallAmount > 0);
 
   const toolName = tool ?? 'get_loan_summary';
   const toolParams = params ?? {};
@@ -561,8 +428,8 @@ app.post('/api/ai/tools', async (req, res) => {
   }
 
   res.json({
-    answer: `AI tool response for query: ${query}\nRemaining debt: ${formatCurrency(remainingDebt)}\nAccount balance: ${formatCurrency(balance.currentBalance)}\nActive shortfall: ${activeShortfall ? 'yes' : 'no'}.`,
-    data: { remainingDebt, balance: balance.currentBalance, activeShortfall, payments, transactions }
+    answer: `AI tool response for query: ${query}\nRemaining debt: ${formatCurrency(remainingDebt)}\nAccount balance: ${formatCurrency(balance.currentBalance)}`,
+    data: { remainingDebt, balance: balance.currentBalance, payments, transactions }
   });
 });
 

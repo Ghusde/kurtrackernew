@@ -12,7 +12,6 @@ type DashboardData = {
   paidPercent: number;
   monthProgress: number;
   tenorMonths: number;
-  activeShortfall: boolean;
   payments: Array<{ id: string; monthNumber: number; amountPaid: number; status: string; shortfallAmount: number; dueDate: string }>;
   transactions: Array<{ id: string; type: string; amount: number; resultingBalance: number; note: string | null; transactionDate: string }>;
 };
@@ -51,7 +50,6 @@ type LoanPayment = {
   amountPaid: number;
   shortfallAmount: number;
   status: string;
-  isDeleted: boolean;
 };
 
 type AccountTransaction = {
@@ -61,23 +59,15 @@ type AccountTransaction = {
   amount: number;
   resultingBalance: number;
   note: string | null;
-  isDeleted: boolean;
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  lunas: 'paid',
-  gagal_debit: 'debit failed',
-  menunggu_pelunasan: 'awaiting settlement'
 };
 
 const TYPE_LABELS: Record<string, string> = {
   debit_cicilan: 'installment debit'
 };
 
-const statusLabel = (status: string) => STATUS_LABELS[status] ?? status.replace(/_/g, ' ');
 const typeLabel = (type: string) => TYPE_LABELS[type] ?? type.replace(/_/g, ' ');
 
-const isIncoming = (type: string) => type === 'topup' || type === 'shortfall_recovery';
+const isIncoming = (type: string) => type === 'topup';
 
 function getRoute() {
   return window.location.hash.replace(/^#/, '') || '/';
@@ -103,7 +93,7 @@ export default function App() {
   return <Dashboard />;
 }
 
-function DetailLayout({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function DetailLayout({ title, subtitle, wide, children }: { title: string; subtitle: string; wide?: boolean; children: React.ReactNode }) {
   return (
     <>
       <div className="background-surface" aria-hidden="true"></div>
@@ -120,7 +110,7 @@ function DetailLayout({ title, subtitle, children }: { title: string; subtitle: 
         </div>
       </header>
 
-      <main className="page detail-page">
+      <main className={`page detail-page${wide ? ' is-wide' : ''}`}>
         <section className="detail-head">
           <h1 className="detail-title">{title}</h1>
           <p className="detail-subtitle">{subtitle}</p>
@@ -134,11 +124,11 @@ function DetailLayout({ title, subtitle, children }: { title: string; subtitle: 
 function LoanPaymentsPage() {
   const [payments, setPayments] = useState<LoanPayment[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ amountDue: '', amountPaid: '', dueDate: '' });
+  const [draft, setDraft] = useState({ monthNumber: '', amountDue: '', amountPaid: '', dueDate: '' });
   const [error, setError] = useState('');
 
   const loadPayments = async () => {
-    const res = await fetch('/api/loan-payments?includeDeleted=true');
+    const res = await fetch('/api/loan-payments');
     setPayments(await res.json());
   };
 
@@ -147,6 +137,7 @@ function LoanPaymentsPage() {
   const startEdit = (payment: LoanPayment) => {
     setEditingId(payment.id);
     setDraft({
+      monthNumber: String(payment.monthNumber),
       amountDue: String(Math.round(payment.amountDue)),
       amountPaid: String(Math.round(payment.amountPaid)),
       dueDate: toDateInputValue(payment.dueDate)
@@ -166,6 +157,7 @@ function LoanPaymentsPage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        monthNumber: Number(draft.monthNumber),
         amountDue: Number(draft.amountDue),
         amountPaid: Number(draft.amountPaid),
         dueDate: draft.dueDate
@@ -174,13 +166,13 @@ function LoanPaymentsPage() {
     setEditingId(null);
   };
 
-  const activePayments = payments.filter((payment) => !payment.isDeleted);
-  const totalPaid = activePayments.reduce((sum, payment) => sum + payment.amountPaid, 0);
+  const totalPaid = payments.reduce((sum, payment) => sum + payment.amountPaid, 0);
 
   return (
     <DetailLayout
+      wide
       title="All Installment History"
-      subtitle={`${activePayments.length} installments · total paid ${formatCurrency(totalPaid)}`}
+      subtitle={`${payments.length} installments · total paid ${formatCurrency(totalPaid)}`}
     >
       {error && <p className="detail-empty">{error}</p>}
       <table className="data-table">
@@ -197,8 +189,17 @@ function LoanPaymentsPage() {
         </thead>
         <tbody>
           {payments.map((payment) => (
-            <tr key={payment.id} style={payment.isDeleted ? { opacity: 0.5 } : undefined}>
-              <td>Month {payment.monthNumber}</td>
+            <tr key={payment.id}>
+              <td>
+                {editingId === payment.id ? (
+                  <input
+                    type="number"
+                    min="1"
+                    value={draft.monthNumber}
+                    onChange={(e) => setDraft({ ...draft, monthNumber: e.target.value })}
+                  />
+                ) : `Month ${payment.monthNumber}`}
+              </td>
               <td>
                 {editingId === payment.id ? (
                   <input
@@ -229,22 +230,10 @@ function LoanPaymentsPage() {
                 ) : formatCurrency(payment.amountPaid)}
               </td>
               <td className="is-numeric">—</td>
-              <td>
-                <span className={`status-pill ${payment.isDeleted ? 'is-warning' : 'is-ok'}`}>
-                  {payment.isDeleted ? 'deleted' : statusLabel(payment.status)}
-                </span>
-              </td>
+              <td><span className="status-pill is-ok">paid</span></td>
               <td>
                 <div className="row-actions">
-                  {payment.isDeleted ? (
-                    <button
-                      type="button"
-                      className="card-action card-action-ghost"
-                      onClick={() => request(`/api/loan-payments/${payment.id}/restore`, { method: 'POST' })}
-                    >
-                      Redo
-                    </button>
-                  ) : editingId === payment.id ? (
+                  {editingId === payment.id ? (
                     <>
                       <button type="button" className="card-action" onClick={() => saveEdit(payment.id)}>Save</button>
                       <button type="button" className="card-action card-action-ghost" onClick={() => setEditingId(null)}>Cancel</button>
@@ -279,7 +268,7 @@ function TransactionsPage() {
   const [error, setError] = useState('');
 
   const loadTransactions = async () => {
-    const res = await fetch('/api/transactions?includeDeleted=true');
+    const res = await fetch('/api/transactions');
     setTransactions(await res.json());
   };
 
@@ -315,12 +304,11 @@ function TransactionsPage() {
     setEditingId(null);
   };
 
-  const activeCount = transactions.filter((tx) => !tx.isDeleted).length;
-
   return (
     <DetailLayout
+      wide
       title="All Account Transactions"
-      subtitle={`${activeCount} transactions`}
+      subtitle={`${transactions.length} transactions`}
     >
       {error && <p className="detail-empty">{error}</p>}
       <table className="data-table">
@@ -336,7 +324,7 @@ function TransactionsPage() {
         </thead>
         <tbody>
           {transactions.map((tx) => (
-            <tr key={tx.id} style={tx.isDeleted ? { opacity: 0.5 } : undefined}>
+            <tr key={tx.id}>
               <td>
                 {editingId === tx.id ? (
                   <input
@@ -371,15 +359,7 @@ function TransactionsPage() {
               </td>
               <td>
                 <div className="row-actions">
-                  {tx.isDeleted ? (
-                    <button
-                      type="button"
-                      className="card-action card-action-ghost"
-                      onClick={() => request(`/api/transactions/${tx.id}/restore`, { method: 'POST' })}
-                    >
-                      Redo
-                    </button>
-                  ) : editingId === tx.id ? (
+                  {editingId === tx.id ? (
                     <>
                       <button type="button" className="card-action" onClick={() => saveEdit(tx.id)}>Save</button>
                       <button type="button" className="card-action card-action-ghost" onClick={() => setEditingId(null)}>Cancel</button>
@@ -571,11 +551,6 @@ function Dashboard() {
             </div>
           </div>
 
-          {data?.activeShortfall && (
-            <div style={{ marginTop: '24px', display: 'inline-block', background: 'rgba(234, 179, 8, 0.2)', color: '#fbbf24', padding: '8px 16px', borderRadius: '9999px', fontSize: '14px' }}>
-              ⚠️ Active shortfall
-            </div>
-          )}
         </section>
 
         {/* Cards */}
@@ -595,7 +570,7 @@ function Dashboard() {
                   </div>
                   <div className="ledger-info">
                     <span className="ledger-label">{getMonthYear(payment.dueDate)}</span>
-                    <span className="ledger-sub" style={{ textTransform: 'capitalize' }}>{statusLabel(payment.status)}</span>
+                    <span className="ledger-sub">paid</span>
                   </div>
                   <span className="ledger-amount" style={{ color: 'var(--aurora-teal)' }}>{formatCurrency(payment.amountPaid)}</span>
                 </li>
