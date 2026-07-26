@@ -199,6 +199,48 @@ a.nav-tab { text-decoration: none; display: inline-block; }
   font-variant-numeric: tabular-nums;
 }
 
+.hero-edit-btn {
+  position: absolute;
+  top: 68px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--glass-strong);
+  color: var(--mist);
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.hero-edit-btn:hover {
+  color: var(--aurora-teal);
+  border-color: var(--aurora-teal);
+  background: rgba(95, 227, 179, 0.12);
+}
+
+.hero-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hero-edit-input {
+  max-width: 260px;
+}
+
+.hero-edit-input input {
+  width: 100%;
+  font-size: 20px;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+
 .hero-progress {
   max-width: 420px;
   margin: 32px auto 0;

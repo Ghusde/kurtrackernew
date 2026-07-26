@@ -211,6 +211,8 @@ function Dashboard() {
   const [formMode, setFormMode] = useState<'topup' | 'edit'>('topup');
   const [newBalance, setNewBalance] = useState('');
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [editingDebt, setEditingDebt] = useState(false);
+  const [debtDraft, setDebtDraft] = useState('');
 
   const loadData = async () => {
     const res = await fetch('/api/dashboard');
@@ -257,13 +259,13 @@ function Dashboard() {
     }
   };
 
-  const undoLast = async () => {
+  const runAction = async (url: string, fallbackMessage: string) => {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch('/api/undo', { method: 'POST' });
+      const res = await fetch(url, { method: 'POST' });
       const json = await res.json();
-      setMessage(json.ok ? 'Undo terakhir berhasil.' : json.error || 'Gagal');
+      setMessage(json.ok ? json.message || fallbackMessage : json.error || 'Gagal');
       await loadData();
       setTimeout(() => setMessage(''), 3000);
     } finally {
@@ -271,19 +273,35 @@ function Dashboard() {
     }
   };
 
-  const payInstallment = async () => {
-    if (busy) return;
+  const undoLast = () => runAction('/api/undo', 'Undo terakhir berhasil.');
+  const redoLast = () => runAction('/api/redo', 'Redo terakhir berhasil.');
+
+  const startEditDebt = () => {
+    setDebtDraft(String(Math.round(data?.remainingDebt ?? 0)));
+    setEditingDebt(true);
+  };
+
+  const saveDebt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy || !debtDraft) return;
     setBusy(true);
     try {
-      const res = await fetch('/api/pay-installment', { method: 'POST' });
+      const res = await fetch('/api/set-remaining-debt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remainingDebt: Number(debtDraft) })
+      });
       const json = await res.json();
-      setMessage(json.ok ? json.message || 'Pembayaran cicilan berhasil.' : json.error || 'Gagal membayar cicilan.');
+      setMessage(json.ok ? json.message || 'Sisa pinjaman diperbarui.' : json.error || 'Gagal mengubah sisa pinjaman.');
+      if (json.ok) setEditingDebt(false);
       await loadData();
       setTimeout(() => setMessage(''), 3000);
     } finally {
       setBusy(false);
     }
   };
+
+  const payInstallment = () => runAction('/api/pay-installment', 'Pembayaran cicilan berhasil.');
 
   return (
     <>
@@ -306,10 +324,37 @@ function Dashboard() {
         <section className="hero">
           <p className="hero-eyebrow">Sisa Pinjaman KUR</p>
           <div className="hero-glow" aria-hidden="true"></div>
-          <h1 className="hero-figure">
-            <span className="hero-currency">Rp</span>
-            <span className="hero-number">{formatThousands(String(Math.round(data?.remainingDebt ?? 0)))}</span>
-          </h1>
+          {!editingDebt && (
+            <button type="button" className="hero-edit-btn" onClick={startEditDebt} title="Edit sisa pinjaman" aria-label="Edit sisa pinjaman">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          )}
+          {editingDebt ? (
+            <form className="hero-edit" onSubmit={saveDebt}>
+              <div className="input-prefix hero-edit-input">
+                <span>Rp</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  autoFocus
+                  aria-label="Sisa pinjaman KUR"
+                  value={formatThousands(debtDraft)}
+                  onChange={(e) => setDebtDraft(toDigits(e.target.value))}
+                />
+              </div>
+              <button type="submit" className="card-action" disabled={busy}>Simpan</button>
+              <button type="button" className="card-action card-action-ghost" onClick={() => setEditingDebt(false)}>Batal</button>
+            </form>
+          ) : (
+            <h1 className="hero-figure">
+              <span className="hero-currency">Rp</span>
+              <span className="hero-number">{formatThousands(String(Math.round(data?.remainingDebt ?? 0)))}</span>
+            </h1>
+          )}
 
           <div className="hero-progress">
             <div className="progress-track">
@@ -355,7 +400,7 @@ function Dashboard() {
               ))}
             </ul>
             <div className="card-foot">
-              <a className="card-more" href="#/riwayat-cicilan" target="_blank" rel="noreferrer">Lihat semua riwayat →</a>
+              <a className="card-more" href="#/riwayat-cicilan">Lihat semua riwayat →</a>
               <button type="button" className="card-action" onClick={payInstallment} disabled={busy}>Bayar</button>
             </div>
           </article>
@@ -384,7 +429,8 @@ function Dashboard() {
               ))}
             </ul>
             <div className="card-foot">
-              <a className="card-more" href="#/transaksi" target="_blank" rel="noreferrer">Lihat semua transaksi →</a>
+              <a className="card-more" href="#/transaksi">Lihat semua transaksi →</a>
+              <button type="button" className="card-action card-action-ghost" onClick={redoLast} disabled={busy}>Redo</button>
               <button type="button" className="card-action card-action-ghost" onClick={undoLast} disabled={busy}>Undo</button>
             </div>
           </article>

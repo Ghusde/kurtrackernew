@@ -149,8 +149,8 @@ app.get('/api/dashboard', async (_req, res) => {
     _count: { _all: true }
   });
   const totalPaid = paidAggregate._sum.amountPaid ?? 0;
-  const remainingDebt = Math.max(0, loanInfo.plafond - totalPaid);
-  const paidPercent = (totalPaid / loanInfo.plafond) * 100;
+  const remainingDebt = Math.max(0, loanInfo.plafond - totalPaid + loanInfo.debtAdjustment);
+  const paidPercent = ((loanInfo.plafond - remainingDebt) / loanInfo.plafond) * 100;
   const activeShortfall = await prisma.loanPayment.findFirst({ where: { shortfallAmount: { gt: 0 } } });
   const monthProgress = paidAggregate._count._all;
 
@@ -333,13 +333,91 @@ app.post('/api/pay-installment', async (_req, res) => {
   res.json({ ok: true, message: `Cicilan bulan ${monthNumber} dibayar ${formatCurrency(amount)}.` });
 });
 
+app.post('/api/set-remaining-debt', async (req, res) => {
+  await ensureSeedData();
+  const { remainingDebt } = req.body;
+  if (typeof remainingDebt !== 'number' || !Number.isFinite(remainingDebt) || remainingDebt < 0) {
+    return res.status(400).json({ error: 'Nominal sisa pinjaman tidak valid.' });
+  }
+
+  const loanInfo = await prisma.loanInfo.findFirst();
+  if (!loanInfo) return res.status(400).json({ error: 'Loan setup missing.' });
+
+  if (remainingDebt > loanInfo.plafond) {
+    return res.status(400).json({ error: `Sisa pinjaman tidak boleh melebihi plafond ${formatCurrency(loanInfo.plafond)}.` });
+  }
+
+  const paidAggregate = await prisma.loanPayment.aggregate({
+    where: { loanInfoId: loanInfo.id },
+    _sum: { amountPaid: true }
+  });
+  const totalPaid = paidAggregate._sum.amountPaid ?? 0;
+
+  await prisma.loanInfo.update({
+    where: { id: loanInfo.id },
+    data: { debtAdjustment: remainingDebt - (loanInfo.plafond - totalPaid) }
+  });
+
+  await backupData();
+  res.json({ ok: true, message: `Sisa pinjaman diubah jadi ${formatCurrency(remainingDebt)}.` });
+});
+
+async function applyTransactionEffect(transaction: { type: string; amount: number; relatedLoanPaymentId: string | null }, direction: 'apply' | 'revert') {
+  const balance = await prisma.accountBalance.findFirst();
+  if (!balance) throw new Error('Account balance missing.');
+
+  const incoming = transaction.type === 'topup' || transaction.type === 'shortfall_recovery';
+  const signedAmount = (incoming ? transaction.amount : -transaction.amount) * (direction === 'apply' ? 1 : -1);
+  const currentBalance = balance.currentBalance + signedAmount;
+  if (currentBalance < 0) return null;
+
+  if (transaction.type === 'debit_cicilan' && transaction.relatedLoanPaymentId) {
+    const payment = await prisma.loanPayment.findUnique({ where: { id: transaction.relatedLoanPaymentId } });
+    if (payment) {
+      const amountPaid = direction === 'apply' ? payment.amountPaid + transaction.amount : payment.amountPaid - transaction.amount;
+      const shortfallAmount = Math.max(0, payment.amountDue - amountPaid);
+      await prisma.loanPayment.update({
+        where: { id: payment.id },
+        data: { amountPaid, shortfallAmount, status: shortfallAmount > 0 ? 'gagal_debit' : 'lunas' }
+      });
+    }
+  }
+
+  await prisma.accountBalance.updateMany({ data: { currentBalance, updatedAt: new Date() } });
+  return currentBalance;
+}
+
 app.post('/api/undo', async (_req, res) => {
   await ensureSeedData();
   const lastTransaction = await prisma.accountTransaction.findFirst({ where: { isUndone: false }, orderBy: { createdAt: 'desc' } });
-  if (!lastTransaction) return res.status(404).json({ error: 'No transaction to undo.' });
+  if (!lastTransaction) return res.status(404).json({ error: 'Tidak ada transaksi untuk di-undo.' });
+
+  const currentBalance = await applyTransactionEffect(lastTransaction, 'revert');
+  if (currentBalance === null) {
+    return res.status(400).json({ error: 'Saldo tidak cukup untuk membatalkan transaksi ini.' });
+  }
+
   await prisma.accountTransaction.update({ where: { id: lastTransaction.id }, data: { isUndone: true } });
   await backupData();
-  res.json({ ok: true });
+  res.json({ ok: true, message: 'Transaksi terakhir dibatalkan.' });
+});
+
+app.post('/api/redo', async (_req, res) => {
+  await ensureSeedData();
+  const lastUndone = await prisma.accountTransaction.findFirst({ where: { isUndone: true }, orderBy: { createdAt: 'desc' } });
+  if (!lastUndone) return res.status(404).json({ error: 'Tidak ada transaksi untuk di-redo.' });
+
+  const currentBalance = await applyTransactionEffect(lastUndone, 'apply');
+  if (currentBalance === null) {
+    return res.status(400).json({ error: 'Saldo tidak cukup untuk mengulang transaksi ini.' });
+  }
+
+  await prisma.accountTransaction.update({
+    where: { id: lastUndone.id },
+    data: { isUndone: false, resultingBalance: currentBalance }
+  });
+  await backupData();
+  res.json({ ok: true, message: 'Transaksi terakhir dikembalikan.' });
 });
 
 app.post('/api/ai/tools', async (req, res) => {
