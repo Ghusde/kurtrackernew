@@ -29,6 +29,7 @@ model LoanPayment {
   amountPaid        Float
   status            String
   shortfallAmount   Float
+  isDeleted         Boolean  @default(false)
   generatedAt       DateTime @default(now())
 
   loanInfo          LoanInfo @relation(fields: [loanInfoId], references: [id])
@@ -49,7 +50,7 @@ model AccountTransaction {
   resultingBalance     Float
   relatedLoanPaymentId  String?
   note                  String?
-  isUndone             Boolean  @default(false)
+  isDeleted            Boolean  @default(false)
   createdAt            DateTime @default(now())
 
   relatedLoanPayment   LoanPayment? @relation(fields: [relatedLoanPaymentId], references: [id])

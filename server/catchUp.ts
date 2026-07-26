@@ -39,7 +39,7 @@ export async function runCatchUp() {
   }
 
   const existingPayments = await prisma.loanPayment.findMany({
-    where: { loanInfoId: loanInfo.id },
+    where: { loanInfoId: loanInfo.id, isDeleted: false },
     orderBy: { monthNumber: 'asc' }
   });
   const existingMonths = new Set(existingPayments.map((payment) => payment.monthNumber));
@@ -60,18 +60,18 @@ export async function runCatchUp() {
     const amountDue = loanInfo.monthlyInstallment;
     let amountPaid = 0;
     let shortfallAmount = 0;
-    let status = 'lunas';
+    let status = 'paid';
 
     if (currentBalance > 0) {
       amountPaid = Math.min(currentBalance, amountDue);
       currentBalance -= amountPaid;
       if (amountPaid < amountDue) {
         shortfallAmount = amountDue - amountPaid;
-        status = 'gagal_debit';
+        status = 'debit_failed';
       }
     } else {
       shortfallAmount = amountDue;
-      status = 'gagal_debit';
+      status = 'debit_failed';
     }
 
     const payment = await prisma.loanPayment.create({
@@ -91,12 +91,12 @@ export async function runCatchUp() {
       await prisma.accountTransaction.create({
         data: {
           transactionDate: item.dueDate,
-          type: 'debit_cicilan',
+          type: 'installment_debit',
           amount: amountPaid,
           resultingBalance: currentBalance,
           relatedLoanPaymentId: payment.id,
-          note: `Cicilan bulan ${item.monthNumber}`,
-          isUndone: false
+          note: `Installment month ${item.monthNumber}`,
+          isDeleted: false
         }
       });
     }

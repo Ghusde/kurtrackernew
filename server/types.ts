@@ -15,6 +15,7 @@ export type LoanPayment = {
   amountPaid: number;
   status: string;
   shortfallAmount: number;
+  isDeleted: boolean;
 };
 
 export type AccountTransaction = {
@@ -25,5 +26,5 @@ export type AccountTransaction = {
   resultingBalance: number;
   relatedLoanPaymentId: string | null;
   note: string | null;
-  isUndone: boolean;
+  isDeleted: boolean;
 };
