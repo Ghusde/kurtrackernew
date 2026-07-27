@@ -34,39 +34,32 @@ async function backupData() {
 }
 
 async function ensureSeedData() {
-  const loanInfo = await prisma.loanInfo.findFirst();
-  if (loanInfo) return loanInfo;
+  let loanInfo = await prisma.loanInfo.findFirst({ orderBy: { createdAt: 'asc' } });
+  if (!loanInfo) {
+    loanInfo = await prisma.loanInfo.create({
+      data: {
+        plafond: 100000000,
+        disbursedAmount: 95000000,
+        monthlyInstallment: 2500000,
+        tenorMonths: 48,
+        startDate: new Date('2026-01-25')
+      }
+    });
+  }
 
-  const created = await prisma.loanInfo.create({
-    data: {
-      plafond: 100000000,
-      disbursedAmount: 95000000,
-      monthlyInstallment: 2500000,
-      tenorMonths: 48,
-      startDate: new Date('2026-01-25')
-    }
-  });
+let balance = await prisma.accountBalance.findFirst({ orderBy: { updatedAt: 'asc' } });
+  if (!balance) {
+    balance = await prisma.accountBalance.create({
+      data: {
+        currentBalance: loanInfo.disbursedAmount,
+        updatedAt: new Date()
+      }
+    });
 
-  await prisma.accountBalance.create({
-    data: {
-      currentBalance: created.disbursedAmount,
-      updatedAt: new Date()
-    }
-  });
+    await backupData();
+  }
 
-  await prisma.accountTransaction.create({
-    data: {
-      transactionDate: new Date(created.startDate),
-      type: 'topup',
-      amount: created.disbursedAmount,
-      resultingBalance: created.disbursedAmount,
-      relatedLoanPaymentId: null,
-      note: 'Initial KUR disbursement'
-    }
-  });
-
-  await backupData();
-  return created;
+  return loanInfo;
 }
 
 app.get('/api/health', (_req, res) => {
@@ -89,17 +82,6 @@ app.post('/api/setup', async (req, res) => {
     data: {
       currentBalance: created.disbursedAmount,
       updatedAt: new Date()
-    }
-  });
-
-  await prisma.accountTransaction.create({
-    data: {
-      transactionDate: new Date(created.startDate),
-      type: 'topup',
-      amount: created.disbursedAmount,
-      resultingBalance: created.disbursedAmount,
-      relatedLoanPaymentId: null,
-      note: 'Initial KUR disbursement'
     }
   });
 
