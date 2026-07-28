@@ -415,6 +415,10 @@ app.post('/api/ai/tools', async (req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (process.env.VERCEL !== '1') {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+export default app;
