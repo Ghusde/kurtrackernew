@@ -57,6 +57,16 @@
   ],
   "accountTransactions": [
     {
+      "id": "cms2poqxr000bgf2oe6zmv0y2",
+      "transactionDate": "2026-07-27T00:00:00.000Z",
+      "type": "topup",
+      "amount": 2000000,
+      "resultingBalance": 3500000,
+      "relatedLoanPaymentId": null,
+      "note": "Test",
+      "createdAt": "2026-07-27T04:13:12.928Z"
+    },
+    {
       "id": "cms2pml6s0001gf2o0fiukz9p",
       "transactionDate": "2026-07-27T04:11:32.162Z",
       "type": "topup",
@@ -85,16 +95,6 @@
       "relatedLoanPaymentId": "cms2pn60h0007gf2oyl9a9g2v",
       "note": "Installment month 2",
       "createdAt": "2026-07-27T04:11:59.265Z"
-    },
-    {
-      "id": "cms2poqxr000bgf2oe6zmv0y2",
-      "transactionDate": "2026-07-27T04:13:12.925Z",
-      "type": "topup",
-      "amount": 2,
-      "resultingBalance": 6500002,
-      "relatedLoanPaymentId": null,
-      "note": "Test",
-      "createdAt": "2026-07-27T04:13:12.928Z"
     },
     {
       "id": "cms2povys000fgf2ome3nxmyj",
