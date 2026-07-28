@@ -6,7 +6,7 @@
     "monthlyInstallment": 2500000,
     "tenorMonths": 48,
     "startDate": "2026-01-25T00:00:00.000Z",
-    "debtAdjustment": -22500000,
+    "debtAdjustment": 12500000,
     "createdAt": "2026-07-27T03:51:39.699Z"
   },
   "loanPayments": [
@@ -53,68 +53,92 @@
       "status": "paid",
       "shortfallAmount": 0,
       "generatedAt": "2026-07-27T04:14:09.893Z"
+    },
+    {
+      "id": "cms433j5y0001ej8b8jrh01kl",
+      "loanInfoId": "cms2ox12q0004sjtfj2g2v8xp",
+      "monthNumber": 6,
+      "dueDate": "2026-07-28T03:16:23.653Z",
+      "amountDue": 2500000,
+      "amountPaid": 2500000,
+      "status": "paid",
+      "shortfallAmount": 0,
+      "generatedAt": "2026-07-28T03:16:23.653Z"
+    },
+    {
+      "id": "cms440c440001xwkvjmwtu8v4",
+      "loanInfoId": "cms2ox12q0004sjtfj2g2v8xp",
+      "monthNumber": 7,
+      "dueDate": "2026-07-28T03:41:54.174Z",
+      "amountDue": 2500000,
+      "amountPaid": 2500000,
+      "status": "paid",
+      "shortfallAmount": 0,
+      "generatedAt": "2026-07-28T03:41:54.174Z"
+    },
+    {
+      "id": "cms440g7p0005xwkvqenzf1jc",
+      "loanInfoId": "cms2ox12q0004sjtfj2g2v8xp",
+      "monthNumber": 8,
+      "dueDate": "2026-07-28T03:41:59.591Z",
+      "amountDue": 2500000,
+      "amountPaid": 2500000,
+      "status": "paid",
+      "shortfallAmount": 0,
+      "generatedAt": "2026-07-28T03:41:59.591Z"
+    },
+    {
+      "id": "cms440klr0009xwkvg44mt4h2",
+      "loanInfoId": "cms2ox12q0004sjtfj2g2v8xp",
+      "monthNumber": 9,
+      "dueDate": "2026-07-28T03:42:05.281Z",
+      "amountDue": 2500000,
+      "amountPaid": 2500000,
+      "status": "paid",
+      "shortfallAmount": 0,
+      "generatedAt": "2026-07-28T03:42:05.281Z"
     }
   ],
   "accountTransactions": [
     {
-      "id": "cms2poqxr000bgf2oe6zmv0y2",
-      "transactionDate": "2026-07-27T00:00:00.000Z",
-      "type": "topup",
-      "amount": 2000000,
+      "id": "cms440ca40003xwkvj4agw7db",
+      "transactionDate": "2026-07-28T03:41:54.174Z",
+      "type": "installment_debit",
+      "amount": 2500000,
+      "resultingBalance": 6000000,
+      "relatedLoanPaymentId": "cms440c440001xwkvjmwtu8v4",
+      "note": "Installment month 7",
+      "createdAt": "2026-07-28T03:41:54.604Z"
+    },
+    {
+      "id": "cms440gaq0007xwkv8dzaovt4",
+      "transactionDate": "2026-07-28T03:41:59.591Z",
+      "type": "installment_debit",
+      "amount": 2500000,
       "resultingBalance": 3500000,
-      "relatedLoanPaymentId": null,
-      "note": "Test",
-      "createdAt": "2026-07-27T04:13:12.928Z"
+      "relatedLoanPaymentId": "cms440g7p0005xwkvqenzf1jc",
+      "note": "Installment month 8",
+      "createdAt": "2026-07-28T03:41:59.810Z"
     },
     {
-      "id": "cms2pml6s0001gf2o0fiukz9p",
-      "transactionDate": "2026-07-27T04:11:32.162Z",
+      "id": "cms440kov000bxwkvfj1jq6by",
+      "transactionDate": "2026-07-28T03:42:05.281Z",
+      "type": "installment_debit",
+      "amount": 2500000,
+      "resultingBalance": 1000000,
+      "relatedLoanPaymentId": "cms440klr0009xwkvg44mt4h2",
+      "note": "Installment month 9",
+      "createdAt": "2026-07-28T03:42:05.503Z"
+    },
+    {
+      "id": "cms441fqm000dxwkva05yuvbf",
+      "transactionDate": "2026-07-28T03:42:45.740Z",
       "type": "topup",
-      "amount": 5500000,
-      "resultingBalance": 5500000,
+      "amount": 1000000,
+      "resultingBalance": 2000000,
       "relatedLoanPaymentId": null,
-      "note": "",
-      "createdAt": "2026-07-27T04:11:32.164Z"
-    },
-    {
-      "id": "cms2pmq4q0005gf2og2adkoew",
-      "transactionDate": "2026-07-27T04:11:38.126Z",
-      "type": "installment_debit",
-      "amount": 2500000,
-      "resultingBalance": 3000000,
-      "relatedLoanPaymentId": "cms2pmpyl0003gf2oqmojhcc2",
-      "note": "Installment month 1",
-      "createdAt": "2026-07-27T04:11:38.570Z"
-    },
-    {
-      "id": "cms2pn63l0009gf2ov2hirb8h",
-      "transactionDate": "2026-07-27T04:11:59.040Z",
-      "type": "installment_debit",
-      "amount": 2500000,
-      "resultingBalance": 500000,
-      "relatedLoanPaymentId": "cms2pn60h0007gf2oyl9a9g2v",
-      "note": "Installment month 2",
-      "createdAt": "2026-07-27T04:11:59.265Z"
-    },
-    {
-      "id": "cms2povys000fgf2ome3nxmyj",
-      "transactionDate": "2026-07-27T04:13:19.221Z",
-      "type": "installment_debit",
-      "amount": 2500000,
-      "resultingBalance": 4000002,
-      "relatedLoanPaymentId": "cms2povvq000dgf2opafpa4ur",
-      "note": "Installment month 3",
-      "createdAt": "2026-07-27T04:13:19.444Z"
-    },
-    {
-      "id": "cms2ppz2a000jgf2oz2fwjbie",
-      "transactionDate": "2026-07-27T04:14:09.893Z",
-      "type": "installment_debit",
-      "amount": 2500000,
-      "resultingBalance": 1500002,
-      "relatedLoanPaymentId": "cms2ppyz9000hgf2o6o82ag54",
-      "note": "Installment month 5",
-      "createdAt": "2026-07-27T04:14:10.115Z"
+      "note": "Top Up",
+      "createdAt": "2026-07-28T03:42:45.742Z"
     }
   ]
 }
