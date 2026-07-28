@@ -8,7 +8,7 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "npm run build:client && npm run build:server",
-    "build:client": "tsc -b && vite build",
+    "build:client": "tsc -b && vite build --force",
     "build:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "test": "vitest run",
