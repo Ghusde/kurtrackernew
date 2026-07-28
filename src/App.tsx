@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { apiFetch } from './api';
 
 type DashboardData = {
   loanInfo: {
@@ -128,7 +129,7 @@ function LoanPaymentsPage() {
   const [error, setError] = useState('');
 
   const loadPayments = async () => {
-    const res = await fetch('/api/loan-payments');
+    const res = await apiFetch('/api/loan-payments');
     setPayments(await res.json());
   };
 
@@ -145,7 +146,7 @@ function LoanPaymentsPage() {
   };
 
   const request = async (url: string, init: RequestInit) => {
-    const res = await fetch(url, init);
+    const res = await apiFetch(url, init);
     const json = await res.json();
     if (!json.ok) setError(json.error || 'Request failed.');
     else setError('');
@@ -268,14 +269,14 @@ function TransactionsPage() {
   const [error, setError] = useState('');
 
   const loadTransactions = async () => {
-    const res = await fetch('/api/transactions');
+    const res = await apiFetch('/api/transactions');
     setTransactions(await res.json());
   };
 
   useEffect(() => { void loadTransactions(); }, []);
 
   const request = async (url: string, init: RequestInit) => {
-    const res = await fetch(url, init);
+    const res = await apiFetch(url, init);
     const json = await res.json();
     if (!json.ok) setError(json.error || 'Request failed.');
     else setError('');
@@ -400,7 +401,7 @@ function Dashboard() {
   const [debtDraft, setDebtDraft] = useState('');
 
   const loadData = async () => {
-    const res = await fetch('/api/dashboard');
+    const res = await apiFetch('/api/dashboard');
     const json = await res.json();
     setData(json);
   };
@@ -412,7 +413,7 @@ function Dashboard() {
   const submitTopUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount) return;
-    const res = await fetch('/api/topup', {
+    const res = await apiFetch('/api/topup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount: Number(amount), note })
@@ -427,7 +428,7 @@ function Dashboard() {
 
   const saveBalance = async () => {
     if (!newBalance) return;
-    const res = await fetch('/api/set-balance', {
+    const res = await apiFetch('/api/set-balance', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ balance: Number(newBalance) })
@@ -448,7 +449,7 @@ function Dashboard() {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(url, { method: 'POST' });
+      const res = await apiFetch(url, { method: 'POST' });
       const json = await res.json();
       setMessage(json.ok ? json.message || fallbackMessage : json.error || 'Request failed.');
       await loadData();
@@ -468,7 +469,7 @@ function Dashboard() {
     if (busy || !debtDraft) return;
     setBusy(true);
     try {
-      const res = await fetch('/api/set-remaining-debt', {
+      const res = await apiFetch('/api/set-remaining-debt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ remainingDebt: Number(debtDraft) })
