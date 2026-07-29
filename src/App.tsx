@@ -43,6 +43,11 @@ function toDateInputValue(dateStr: string) {
   return new Date(dateStr).toISOString().split('T')[0];
 }
 
+// Keep this in sync with MAX_REMAINING_DEBT on the server (server/index.ts).
+// It's only used here to show a hint and give instant client-side feedback;
+// the server still enforces the real limit.
+const MAX_REMAINING_DEBT = 120000000;
+
 type LoanPayment = {
   id: string;
   monthNumber: number;
@@ -529,6 +534,7 @@ function Dashboard() {
                   onChange={(e) => setDebtDraft(toDigits(e.target.value))}
                 />
               </div>
+              <p className="hero-edit-hint">Max {formatCurrency(MAX_REMAINING_DEBT)}</p>
               <button type="submit" className="card-action" disabled={busy}>Save</button>
               <button type="button" className="card-action card-action-ghost" onClick={() => setEditingDebt(false)}>Cancel</button>
             </form>

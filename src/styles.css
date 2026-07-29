@@ -36,6 +36,9 @@ html, body {
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent the whole page from being horizontally draggable on mobile;
+     only specific containers (tables) should scroll sideways. */
+  overflow-x: hidden;
 }
 
 ::selection { background: rgba(139, 124, 246, 0.35); }
@@ -240,6 +243,14 @@ a.nav-tab { text-decoration: none; display: inline-block; }
   font-size: 20px;
   color: var(--paper);
   font-variant-numeric: tabular-nums;
+}
+
+.hero-edit-hint {
+  width: 100%;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--mist-dim);
 }
 
 .hero-progress {
@@ -659,6 +670,20 @@ a.card-more { text-decoration: none; display: block; }
   .hero { padding: 48px 0 32px; }
   .brand-name-light { display: none; }
   .nav-tab { padding: 7px 10px; font-size: 12px; }
+
+  /* iOS/Android auto-zoom the viewport when a focused input's computed
+     font-size is under 16px. Force every text-entry field to 16px on
+     mobile only, so typing in Amount / Account Balance / table-row edit
+     fields behaves the same as the Remaining KUR Debt field (which was
+     already 20px and never zoomed). Desktop sizing above is untouched. */
+  .field input,
+  .input-prefix input,
+  .data-table input,
+  input[type="text"],
+  input[type="number"],
+  input[type="date"] {
+    font-size: 16px;
+  }
 }
 
 /* Focus visibility for accessibility */
@@ -719,6 +744,8 @@ input:focus-visible { outline: none; }
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 .data-table {
@@ -800,3 +827,23 @@ input:focus-visible { outline: none; }
   padding: 24px 0;
 }
 
+/* On mobile, always force the table container to be the thing that
+   scrolls horizontally (never the page). The is-wide desktop override
+   above sets overflow-x: visible so the wide layout can breathe on
+   large screens — undo that specifically on small screens. */
+@media (max-width: 640px) {
+  .detail-page.is-wide {
+    max-width: 100vw;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .detail-page.is-wide .detail-panel {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 0;
+    padding: 8px 14px 16px;
+  }
+  .detail-panel {
+    margin: 0 4px;
+  }
+}

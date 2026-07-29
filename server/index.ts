@@ -18,6 +18,11 @@ const __dirname = path.dirname(__filename);
 const backupDir = path.join(__dirname, '..', 'backup');
 mkdirSync(backupDir, { recursive: true });
 
+// Fixed monthly installment amount and the highest remaining-debt value the
+// "Remaining KUR Debt" field can be edited to.
+const MONTHLY_INSTALLMENT = 2348333;
+const MAX_REMAINING_DEBT = 120000000;
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
 }
@@ -40,10 +45,17 @@ async function ensureSeedData() {
       data: {
         plafond: 100000000,
         disbursedAmount: 95000000,
-        monthlyInstallment: 2500000,
+        monthlyInstallment: MONTHLY_INSTALLMENT,
         tenorMonths: 48,
         startDate: new Date('2026-01-25')
       }
+    });
+  } else if (loanInfo.monthlyInstallment !== MONTHLY_INSTALLMENT) {
+    // Keep the existing record in sync with the fixed installment amount
+    // (covers records created before this value was corrected).
+    loanInfo = await prisma.loanInfo.update({
+      where: { id: loanInfo.id },
+      data: { monthlyInstallment: MONTHLY_INSTALLMENT }
     });
   }
 
@@ -72,7 +84,7 @@ app.post('/api/setup', async (req, res) => {
     data: {
       plafond: Number(payload.plafon ?? 100000000),
       disbursedAmount: Number(payload.disbursedAmount ?? 95000000),
-      monthlyInstallment: Number(payload.monthlyInstallment ?? 2500000),
+      monthlyInstallment: Number(payload.monthlyInstallment ?? MONTHLY_INSTALLMENT),
       tenorMonths: Number(payload.tenorMonths ?? 48),
       startDate: new Date(payload.startDate ?? '2026-01-25')
     }
@@ -248,12 +260,12 @@ app.post('/api/set-remaining-debt', async (req, res) => {
     return res.status(400).json({ error: 'Invalid remaining debt amount.' });
   }
 
+  if (remainingDebt > MAX_REMAINING_DEBT) {
+    return res.status(400).json({ error: `Remaining debt cannot exceed ${formatCurrency(MAX_REMAINING_DEBT)}.` });
+  }
+
   const loanInfo = await prisma.loanInfo.findFirst();
   if (!loanInfo) return res.status(400).json({ error: 'Loan setup missing.' });
-
-  if (remainingDebt > loanInfo.plafond) {
-    return res.status(400).json({ error: `Remaining debt cannot exceed the plafond ${formatCurrency(loanInfo.plafond)}.` });
-  }
 
   const paidAggregate = await prisma.loanPayment.aggregate({
     where: { loanInfoId: loanInfo.id },
@@ -261,9 +273,17 @@ app.post('/api/set-remaining-debt', async (req, res) => {
   });
   const totalPaid = paidAggregate._sum.amountPaid ?? 0;
 
+  // The progress bar's paid-percentage is (plafond - remainingDebt) / plafond.
+  // If the edited remaining debt goes above the current plafond (e.g. the
+  // debt basis itself grew, up to the 120jt ceiling), raise the plafond to
+  // match so the percentage always stays consistent with whatever value was
+  // just entered, instead of going negative or ignoring the edit.
+  const newPlafond = Math.max(loanInfo.plafond, remainingDebt);
+  const debtAdjustment = remainingDebt - (newPlafond - totalPaid);
+
   await prisma.loanInfo.update({
     where: { id: loanInfo.id },
-    data: { debtAdjustment: remainingDebt - (loanInfo.plafond - totalPaid) }
+    data: { plafond: newPlafond, debtAdjustment }
   });
 
   await backupData();
