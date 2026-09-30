@@ -1,10 +1,15 @@
 generator client {
   provider = "prisma-client-js"
+  // "native" for local dev, the RHEL target for Vercel's Node runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Transaction pooler (port 6543) - what the serverless functions use.
+  url       = env("DATABASE_URL")
+  // Session/direct connection (port 5432) - migrations only.
+  directUrl = env("DIRECT_URL")
 }
 
 model LoanInfo {

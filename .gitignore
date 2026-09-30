@@ -1,5 +1,18 @@
 node_modules/
 dist/
-dist-server/
+.vercel
+*.tsbuildinfo
+
+# Editor-local state (personal Copilot/terminal settings, not shared config).
+.vscode/
+
+# Embedded Postgres cluster used by `npm run db:local`.
+.localdb/
+
+# Secrets - never commit real database credentials.
 .env
 .env.local
+.env.test
+
+# Local JSON snapshots contain real financial data.
+backup/*.json

@@ -43,7 +43,7 @@ function toDateInputValue(dateStr: string) {
   return new Date(dateStr).toISOString().split('T')[0];
 }
 
-// Keep this in sync with MAX_REMAINING_DEBT on the server (server/index.ts).
+// Keep this in sync with MAX_REMAINING_DEBT in api/_lib/core.ts.
 // It's only used here to show a hint and give instant client-side feedback;
 // the server still enforces the real limit.
 const MAX_REMAINING_DEBT = 120000000;
@@ -134,8 +134,21 @@ function LoanPaymentsPage() {
   const [error, setError] = useState('');
 
   const loadPayments = async () => {
-    const res = await apiFetch('/api/loan-payments');
-    setPayments(await res.json());
+    try {
+      const res = await apiFetch('/api/loan-payments');
+      const json = await res.json();
+      // A 500 returns { error }, not an array. Assigning that here would make
+      // payments.map() throw during render and blank the whole page.
+      if (!res.ok || !Array.isArray(json)) {
+        setPayments([]);
+        setError(json?.error || 'Could not load installments.');
+        return;
+      }
+      setPayments(json);
+    } catch {
+      setPayments([]);
+      setError('Could not reach the API. Check that the server is running.');
+    }
   };
 
   useEffect(() => { void loadPayments(); }, []);
@@ -151,11 +164,15 @@ function LoanPaymentsPage() {
   };
 
   const request = async (url: string, init: RequestInit) => {
-    const res = await apiFetch(url, init);
-    const json = await res.json();
-    if (!json.ok) setError(json.error || 'Request failed.');
-    else setError('');
-    await loadPayments();
+    try {
+      const res = await apiFetch(url, init);
+      const json = await res.json();
+      if (!json.ok) setError(json.error || 'Request failed.');
+      else setError('');
+      await loadPayments();
+    } catch {
+      setError('Could not reach the API. Nothing was changed.');
+    }
   };
 
   const saveEdit = async (id: string) => {
@@ -274,18 +291,34 @@ function TransactionsPage() {
   const [error, setError] = useState('');
 
   const loadTransactions = async () => {
-    const res = await apiFetch('/api/transactions');
-    setTransactions(await res.json());
+    try {
+      const res = await apiFetch('/api/transactions');
+      const json = await res.json();
+      // See loadPayments: an error object must never be stored as the list.
+      if (!res.ok || !Array.isArray(json)) {
+        setTransactions([]);
+        setError(json?.error || 'Could not load transactions.');
+        return;
+      }
+      setTransactions(json);
+    } catch {
+      setTransactions([]);
+      setError('Could not reach the API. Check that the server is running.');
+    }
   };
 
   useEffect(() => { void loadTransactions(); }, []);
 
   const request = async (url: string, init: RequestInit) => {
-    const res = await apiFetch(url, init);
-    const json = await res.json();
-    if (!json.ok) setError(json.error || 'Request failed.');
-    else setError('');
-    await loadTransactions();
+    try {
+      const res = await apiFetch(url, init);
+      const json = await res.json();
+      if (!json.ok) setError(json.error || 'Request failed.');
+      else setError('');
+      await loadTransactions();
+    } catch {
+      setError('Could not reach the API. Nothing was changed.');
+    }
   };
 
   const startEdit = (tx: AccountTransaction) => {
@@ -404,11 +437,24 @@ function Dashboard() {
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split('T')[0]);
   const [editingDebt, setEditingDebt] = useState(false);
   const [debtDraft, setDebtDraft] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const loadData = async () => {
-    const res = await apiFetch('/api/dashboard');
-    const json = await res.json();
-    setData(json);
+    try {
+      const res = await apiFetch('/api/dashboard');
+      const json = await res.json();
+      if (!res.ok || !Array.isArray(json.payments) || !Array.isArray(json.transactions)) {
+        setData(null);
+        setLoadError(json.error || 'Could not load dashboard. Check the database connection.');
+        return;
+      }
+
+      setData(json);
+      setLoadError('');
+    } catch {
+      setData(null);
+      setLoadError('Could not reach the API. Check that the local server and database are running.');
+    }
   };
 
   useEffect(() => { void loadData(); }, []);
@@ -418,35 +464,48 @@ function Dashboard() {
   const submitTopUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount) return;
-    const res = await apiFetch('/api/topup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Number(amount), note })
-    });
-    const json = await res.json();
-    setMessage(json.ok ? 'Top up saved successfully.' : json.error || 'Request failed.');
-    setAmount('');
-    setNote('');
-    await loadData();
-    setTimeout(() => setMessage(''), 3000);
+    try {
+      const res = await apiFetch('/api/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: Number(amount), note })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setMessage(json.error || 'Request failed. The value was not saved.');
+        return;
+      }
+
+      setMessage('Top up saved successfully.');
+      setAmount('');
+      setNote('');
+      await loadData();
+      setTimeout(() => setMessage(''), 3000);
+    } catch {
+      setMessage('Could not reach the API. The value was not saved.');
+    }
   };
 
   const saveBalance = async () => {
     if (!newBalance) return;
-    const res = await apiFetch('/api/set-balance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ balance: Number(newBalance) })
-    });
-    const json = await res.json();
-    if (json.ok) {
-      setFormMode('topup');
-      setNewBalance('');
-      setMessage('Account balance updated.');
-      await loadData();
-      setTimeout(() => setMessage(''), 3000);
-    } else {
-      setMessage(json.error || 'Failed to update balance.');
+    try {
+      const res = await apiFetch('/api/set-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance: Number(newBalance) })
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setFormMode('topup');
+        setNewBalance('');
+        setMessage('Account balance updated.');
+        await loadData();
+        setTimeout(() => setMessage(''), 3000);
+      } else {
+        setMessage(json.error || 'Failed to update balance.');
+      }
+    } catch {
+      setMessage('Could not reach the API. The balance was not changed.');
     }
   };
 
@@ -459,6 +518,8 @@ function Dashboard() {
       setMessage(json.ok ? json.message || fallbackMessage : json.error || 'Request failed.');
       await loadData();
       setTimeout(() => setMessage(''), 3000);
+    } catch {
+      setMessage('Could not reach the API. Nothing was changed.');
     } finally {
       setBusy(false);
     }
@@ -484,6 +545,8 @@ function Dashboard() {
       if (json.ok) setEditingDebt(false);
       await loadData();
       setTimeout(() => setMessage(''), 3000);
+    } catch {
+      setMessage('Could not reach the API. The remaining debt was not changed.');
     } finally {
       setBusy(false);
     }
@@ -617,6 +680,8 @@ function Dashboard() {
             </div>
           </article>
         </section>
+
+        {loadError && <p className="detail-empty" role="alert">{loadError}</p>}
 
         {/* Form */}
         <section className="form-section">
