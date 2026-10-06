@@ -18,6 +18,7 @@
     "test:db": "node scripts/migrate-test-db.mjs && vitest run --config vitest.config.db.ts",
     "db:local": "node scripts/local-db.mjs",
     "db:migrate": "node scripts/migrate-local-db.mjs",
+    "db:deploy": "node scripts/deploy-schema.mjs",
     "db:reset": "node scripts/db-reset.mjs",
     "backup": "node scripts/backup.mjs",
     "postinstall": "prisma generate",
