@@ -19,6 +19,7 @@
     "db:local": "node scripts/local-db.mjs",
     "db:migrate": "node scripts/migrate-local-db.mjs",
     "db:deploy": "node scripts/deploy-schema.mjs",
+    "db:check": "node scripts/check-db.mjs",
     "db:reset": "node scripts/db-reset.mjs",
     "backup": "node scripts/backup.mjs",
     "postinstall": "prisma generate",
